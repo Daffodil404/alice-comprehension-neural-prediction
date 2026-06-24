@@ -1,0 +1,10 @@
+[project]
+name = "alice-comprehension-neural-prediction"
+version = "0.1.0"
+description = "Subject-level prediction of Alice story comprehension from EEG-derived neural measures."
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

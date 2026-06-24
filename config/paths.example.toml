@@ -1,0 +1,7 @@
+# Copy this to config/paths.local.toml if local paths change.
+
+bids_root = "/Users/yanyuwoo/Data/bids"
+raw_root = "/Users/yanyuwoo/Data/r"
+comprehension_scores = "/Users/yanyuwoo/Data/r/comprehension-scores.txt"
+comprehension_questions = "/Users/yanyuwoo/Data/r/comprehension-questions.doc"
+

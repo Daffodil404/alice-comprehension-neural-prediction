@@ -1,0 +1,19 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# Keep raw/private data outside this repo.
+data/raw/
+
+# Generated outputs can be recreated.
+figures/*
+results/*
+data/derived/*
+
+!figures/.gitkeep
+!results/.gitkeep
+!data/derived/.gitkeep
+
