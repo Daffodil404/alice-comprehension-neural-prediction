@@ -42,6 +42,14 @@ with names like:
 ...
 ```
 
+Segment durations are read dynamically from:
+
+```text
+/Users/yanyuwoo/Data/bids/stimuli/*.wav
+```
+
+The pipeline uses these durations to define each story-listening epoch.
+
 ## Important Precondition
 
 Before running TRFs, fix the `AUD` channel metadata:
@@ -60,4 +68,3 @@ binary files.
 3. Run the first `gammatone-8` TRF model.
 4. Extract subject-level tracking scores.
 5. Merge tracking scores with comprehension scores.
-

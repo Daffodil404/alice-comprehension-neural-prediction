@@ -10,30 +10,33 @@ from __future__ import annotations
 from pathlib import Path
 
 import re
+import wave
 
 from eelbrain.pipeline import LabelVar, PrimaryEpoch, RawFilter, RawSource
 from trftools.pipeline import FilePredictor, TRFExperiment
 
 
 BIDS_ROOT = Path("/Users/yanyuwoo/Data/bids")
+STIMULI_DIR = BIDS_ROOT / "stimuli"
 
-# Durations are in seconds for the 12 Alice chapter-one audio segments.
-# The +1 second margin is added in the Pipeline variable definition below,
-# following the original Alice TRF-Tools example.
-SEGMENT_DURATION = {
-    "1": 57.541,
-    "2": 60.845,
-    "3": 63.259,
-    "4": 69.989,
-    "5": 66.273,
-    "6": 63.778,
-    "7": 62.897,
-    "8": 57.311,
-    "9": 57.226,
-    "10": 61.270,
-    "11": 56.170,
-    "12": 46.983,
-}
+
+def _load_segment_durations(stimuli_dir: Path = STIMULI_DIR) -> dict[str, float]:
+    """Read segment durations from stimulus WAV files.
+
+    Segment keys match the predictor file convention:
+    ``1.wav`` -> ``1~gammatone-8.pickle``.
+    """
+
+    durations: dict[str, float] = {}
+    for wav_path in sorted(stimuli_dir.glob("*.wav"), key=lambda path: int(path.stem)):
+        with wave.open(str(wav_path), "rb") as wav:
+            durations[wav_path.stem] = wav.getnframes() / wav.getframerate()
+    if not durations:
+        raise FileNotFoundError(f"No stimulus WAV files found in {stimuli_dir}")
+    return durations
+
+
+SEGMENT_DURATION = _load_segment_durations()
 
 
 def _event_to_segment_map() -> dict[str, str]:
@@ -46,14 +49,12 @@ def _event_to_segment_map() -> dict[str, str]:
     """
 
     mapping: dict[str, str] = {}
-    for segment in range(1, 13):
-        key = str(segment)
+    for key in sorted(SEGMENT_DURATION, key=int):
+        segment = int(key)
         mapping[f"Stimulus/{segment}"] = key
         mapping[f"Stimulus/S {segment:2d}"] = key
-        if segment < 10:
-            mapping[f"Stimulus/S  {segment}"] = key
-        else:
-            mapping[f"Stimulus/S {segment}"] = key
+        mapping[f"Stimulus/S {segment}"] = key
+        mapping[f"Stimulus/S{segment}"] = key
     return mapping
 
 
