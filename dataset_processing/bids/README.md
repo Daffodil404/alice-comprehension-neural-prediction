@@ -1,28 +1,49 @@
 # BIDS Dataset Processing
 
-This folder contains notebooks and scripts used to create, inspect, and update
-the Alice comprehension BIDS dataset.
+This folder contains notebooks for creating, checking, and updating the Alice
+comprehension BIDS dataset.
 
-These files are for dataset preparation, not feature extraction or TRF model
-estimation.
+The organization is by function:
 
-## Files
+```text
+dataset_processing/bids/
+├── conversion/
+├── qc/
+└── apply/
+```
 
-- `00_convert_alice_to_bids_original.ipynb`
+## Conversion
+
+- `conversion/convert_alice_to_bids_original.ipynb`
   - Migrated from `/Users/yanyuwoo/Desktop/convert_alice_to_bids.ipynb`.
-  - Converts the original BrainVision files in `/Users/yanyuwoo/Data/r` into
-    the BIDS dataset under `/Users/yanyuwoo/Data/bids`.
-  - Outputs were cleared after migration so the notebook can be reviewed and
-    re-run step by step.
+  - Converts original BrainVision files in `/Users/yanyuwoo/Data/r` into the
+    BIDS dataset under `/Users/yanyuwoo/Data/bids`.
+  - Outputs were cleared after migration.
 
-## Planned Next Notebook
+## QC
 
-The next notebook should implement the OpenNeuro/BIDS event-table cleanup:
+- `qc/openneuro_events_qc.ipynb`
+  - Read-only event-table QC for OpenNeuro/BIDS feedback.
+  - Checks `raw_trial_type`, `stimulus_id`, `value`, and WAV-based `duration`.
+  - Does not write to the BIDS dataset.
 
-- remove redundant `raw_trial_type` columns when they duplicate `trial_type`
-- add `stimulus_id` metadata to `events.json`
-- verify whether `stimulus_id` refers to WAV segment identity rather than raw
-  trigger `value`
-- replace trigger-pulse durations with WAV segment durations in `events.tsv`
-- document that BrainVision `.vmrk` markers are not rewritten unless explicitly
-  regenerated
+- `qc/stimulus_id_audio_alignment_qc.ipynb`
+  - Read-only audio alignment QC.
+  - Compares the recorded audio/AUD channel after each event onset against WAV
+    stimulus envelopes.
+  - Used to verify `stimulus_id` before editing BIDS events.
+
+## Apply
+
+- `apply/openneuro_events_cleanup.ipynb`
+  - Processing/write-back notebook.
+  - Defaults to dry-run mode.
+  - Run only after the event-table QC and audio-alignment QC are reviewed.
+  - Backs up edited files before writing to `/Users/yanyuwoo/Data/bids`.
+
+## Suggested Order
+
+1. Review conversion provenance if needed.
+2. Run `qc/openneuro_events_qc.ipynb`.
+3. Run `qc/stimulus_id_audio_alignment_qc.ipynb`.
+4. Only after QC is accepted, run `apply/openneuro_events_cleanup.ipynb`.
