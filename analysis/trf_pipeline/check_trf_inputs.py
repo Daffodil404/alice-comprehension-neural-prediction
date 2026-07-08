@@ -10,7 +10,13 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from alice_trf_experiment import BIDS_ROOT, EVENT_TO_SEGMENT, alice
+from alice_trf_experiment import (
+    BIDS_ROOT,
+    BIDS_SEGMENT_DURATION,
+    EVENT_TO_SEGMENT,
+    WAV_SEGMENT_DURATION,
+    alice,
+)
 
 
 PREDICTOR_DIR = BIDS_ROOT / "derivatives" / "predictors"
@@ -41,6 +47,21 @@ def check_predictors() -> list[Path]:
     return missing
 
 
+def check_durations() -> None:
+    print(f"BIDS duration segments: {len(BIDS_SEGMENT_DURATION)}")
+    print(f"WAV duration segments: {len(WAV_SEGMENT_DURATION)}")
+    for segment, bids_duration in BIDS_SEGMENT_DURATION.items():
+        wav_duration = WAV_SEGMENT_DURATION.get(segment)
+        if wav_duration is None:
+            print(f"  stimulus_id={segment}: missing WAV duration")
+            continue
+        delta = bids_duration - wav_duration
+        print(
+            f"  stimulus_id={segment}: "
+            f"BIDS={bids_duration:.6f}s WAV={wav_duration:.6f}s delta={delta:.6f}s"
+        )
+
+
 def check_events(subject: str = "01") -> None:
     events = alice.load_events(subject)
     print(f"Loaded events for subject {subject}: {events.n_cases} rows")
@@ -65,6 +86,7 @@ def main() -> None:
     subjects = alice.get_field_values("subject")
     print(f"Pipeline subjects: {len(subjects)} ({subjects[0]}..{subjects[-1]})")
     print(f"Event marker mappings: {len(EVENT_TO_SEGMENT)}")
+    check_durations()
 
     total_aud, bad_subjects = check_aud_channel_types()
     print(f"AUD rows in channels.tsv: {total_aud}")

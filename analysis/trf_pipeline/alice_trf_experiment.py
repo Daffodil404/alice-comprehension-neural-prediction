@@ -7,6 +7,7 @@ implementation.
 
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 
 import re
@@ -18,10 +19,11 @@ from trftools.pipeline import FilePredictor, TRFExperiment
 
 BIDS_ROOT = Path("/Users/yanyuwoo/Data/bids")
 STIMULI_DIR = BIDS_ROOT / "stimuli"
+DURATION_TOLERANCE_SEC = 0.001
 
 
-def _load_segment_durations(stimuli_dir: Path = STIMULI_DIR) -> dict[str, float]:
-    """Read segment durations from stimulus WAV files.
+def _load_segment_durations_from_wav(stimuli_dir: Path = STIMULI_DIR) -> dict[str, float]:
+    """Read segment durations from stimulus WAV files for QC comparison.
 
     Segment keys match the predictor file convention:
     ``1.wav`` -> ``1~gammatone-8.pickle``.
@@ -36,7 +38,53 @@ def _load_segment_durations(stimuli_dir: Path = STIMULI_DIR) -> dict[str, float]
     return durations
 
 
-SEGMENT_DURATION = _load_segment_durations()
+def _load_segment_durations_from_events(bids_root: Path = BIDS_ROOT) -> dict[str, float]:
+    """Read segment durations from BIDS events.tsv files.
+
+    The BIDS events table is the source of truth for epoch duration. Durations
+    are keyed by ``stimulus_id`` so they match predictor file stems.
+    """
+
+    durations_by_segment: dict[str, list[float]] = {}
+    event_paths = sorted(bids_root.glob("sub-*/eeg/*_events.tsv"))
+    if not event_paths:
+        raise FileNotFoundError(f"No BIDS events.tsv files found under {bids_root}")
+
+    for path in event_paths:
+        with path.open(encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f, delimiter="\t")
+            missing_columns = {"duration", "stimulus_id"} - set(reader.fieldnames or [])
+            if missing_columns:
+                raise ValueError(f"{path} is missing columns: {sorted(missing_columns)}")
+
+            for row in reader:
+                stimulus_id = row["stimulus_id"].strip()
+                duration = row["duration"].strip()
+                if not stimulus_id or not duration:
+                    continue
+                durations_by_segment.setdefault(stimulus_id, []).append(float(duration))
+
+    if not durations_by_segment:
+        raise ValueError(f"No stimulus durations found in BIDS events.tsv files under {bids_root}")
+
+    durations: dict[str, float] = {}
+    for segment, values in durations_by_segment.items():
+        reference = values[0]
+        if any(abs(value - reference) > DURATION_TOLERANCE_SEC for value in values):
+            raise ValueError(
+                f"Inconsistent duration values for stimulus_id={segment}: "
+                f"min={min(values):.6f}, max={max(values):.6f}"
+            )
+        durations[segment] = reference
+
+    return dict(sorted(durations.items(), key=lambda item: int(item[0])))
+
+
+BIDS_SEGMENT_DURATION = _load_segment_durations_from_events()
+WAV_SEGMENT_DURATION = _load_segment_durations_from_wav()
+
+# Keep this public name for the TRF-Tools experiment and notebooks.
+SEGMENT_DURATION = BIDS_SEGMENT_DURATION
 
 
 def _event_to_segment_map() -> dict[str, str]:

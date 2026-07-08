@@ -42,13 +42,15 @@ with names like:
 ...
 ```
 
-Segment durations are read dynamically from:
+Segment durations are read dynamically from BIDS `events.tsv` files:
 
 ```text
-/Users/yanyuwoo/Data/bids/stimuli/*.wav
+/Users/yanyuwoo/Data/bids/sub-*/eeg/*_events.tsv
 ```
 
-The pipeline uses these durations to define each story-listening epoch.
+The pipeline uses the `duration` column, keyed by `stimulus_id`, to define each
+story-listening epoch. WAV durations are still read in the setup check only as a
+QC comparison.
 
 ## Important Precondition
 
