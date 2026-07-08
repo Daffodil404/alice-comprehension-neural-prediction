@@ -180,6 +180,7 @@ class AliceComprehensionTRF(TRFExperiment):
     }
 
     models = {
+        "gammatone-8": "gammatone-8",
         "auditory-gammatone": "gammatone-8 + gammatone-on-8",
     }
 

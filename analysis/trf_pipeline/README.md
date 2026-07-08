@@ -28,7 +28,8 @@ The first formal pipeline model is:
 gammatone-8
 ```
 
-This uses existing predictor files under:
+This model name is registered in `AliceComprehensionTRF.models` and uses
+existing predictor files under:
 
 ```text
 /Users/yanyuwoo/Data/bids/derivatives/predictors/
