@@ -19,6 +19,8 @@ Run from the alice-comprehension-neural-prediction repository root:
     python dataset_processing/bids/qc/scripts/check_random_subject_triggers.py --show
     python dataset_processing/bids/qc/scripts/check_random_subject_triggers.py --subject S1 --show
     python dataset_processing/bids/qc/scripts/check_random_subject_triggers.py --subject sub-30 --show
+    python dataset_processing/bids/qc/scripts/check_random_subject_triggers.py --random-count 10 --include-subjects sub-09 sub-21 sub-30
+    python dataset_processing/bids/qc/scripts/check_random_subject_triggers.py --random-count 10 --include-subjects sub-09 sub-21 sub-30 --include-mismatch-subjects
 """
 
 from __future__ import annotations
@@ -40,6 +42,10 @@ PREDICTOR_DIR = BIDS_ROOT / "derivatives" / "predictors"
 DEFAULT_OUTPUT_DIR = Path(
     "/Users/yanyuwoo/Data/Alice Comprehension/qc/stimulus_id_audio_alignment/plots"
 )
+DEFAULT_SUBJECT_QC_PATH = Path(
+    "/Users/yanyuwoo/Data/Alice Comprehension/qc/stimulus_id_audio_alignment/"
+    "stimulus_id_audio_alignment_subjects.csv"
+)
 AUDIO_CHANNEL_CANDIDATES = ("AUD", "Aux5")
 
 
@@ -56,6 +62,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--subject",
         help="Subject to inspect, e.g. S1, S01, sub-01, or sub-30. If omitted, choose a random subject.",
+    )
+    parser.add_argument(
+        "--random-count",
+        type=int,
+        help="Randomly select this many subjects. Can be combined with --include-subjects.",
+    )
+    parser.add_argument(
+        "--include-subjects",
+        nargs="*",
+        default=[],
+        help="Additional subjects to always inspect, e.g. sub-09 sub-21.",
+    )
+    parser.add_argument(
+        "--include-mismatch-subjects",
+        action="store_true",
+        help="Also inspect all subjects marked has_mismatch in the automatic audio-alignment QC report.",
+    )
+    parser.add_argument(
+        "--subject-qc-path",
+        type=Path,
+        default=DEFAULT_SUBJECT_QC_PATH,
+        help="Path to stimulus_id_audio_alignment_subjects.csv for --include-mismatch-subjects.",
     )
     parser.add_argument(
         "--seed",
@@ -110,6 +138,42 @@ def choose_subject(bids_root: Path, requested_subject: str | None, seed: int) ->
         return subject
     rng = random.Random(seed)
     return rng.choice(subjects)
+
+
+def read_mismatch_subjects(subject_qc_path: Path) -> list[str]:
+    if not subject_qc_path.exists():
+        raise FileNotFoundError(subject_qc_path)
+    qc = pd.read_csv(subject_qc_path)
+    if "subject" not in qc.columns or "status" not in qc.columns:
+        raise RuntimeError(f"{subject_qc_path} must contain subject and status columns")
+    return qc.loc[qc["status"].eq("has_mismatch"), "subject"].astype(str).tolist()
+
+
+def choose_subjects(args: argparse.Namespace) -> list[str]:
+    subjects = available_subjects(args.bids_root)
+    selected: list[str] = []
+
+    if args.subject:
+        selected.append(normalize_subject(args.subject))
+    else:
+        if args.random_count:
+            rng = random.Random(args.seed)
+            selected.extend(rng.sample(subjects, min(args.random_count, len(subjects))))
+        elif not args.include_subjects and not args.include_mismatch_subjects:
+            selected.append(choose_subject(args.bids_root, None, args.seed))
+
+    selected.extend(normalize_subject(subject) for subject in args.include_subjects)
+
+    if args.include_mismatch_subjects:
+        selected.extend(read_mismatch_subjects(args.subject_qc_path))
+
+    deduplicated = []
+    for subject in selected:
+        if subject not in subjects:
+            raise ValueError(f"{subject!r} is not in {args.bids_root}")
+        if subject not in deduplicated:
+            deduplicated.append(subject)
+    return deduplicated
 
 
 def subject_paths(bids_root: Path, subject: str) -> tuple[Path, Path]:
@@ -210,14 +274,15 @@ def save_transparent_overlay(plot_rows: list[dict], output_path: Path) -> None:
     plt.close(fig)
 
 
-def main() -> None:
-    args = parse_args()
-    bids_root = args.bids_root
-    predictor_dir = bids_root / "derivatives" / "predictors"
-
-    subject = choose_subject(bids_root, args.subject, args.seed)
+def inspect_subject(
+    bids_root: Path,
+    subject: str,
+    gammatone: dict[str, NDVar],
+    samples: int,
+    output_dir: Path,
+    show: bool,
+) -> dict:
     events_path, vhdr_path = subject_paths(bids_root, subject)
-
     print(f"Subject: {subject}")
     print(f"Events: {events_path}")
     print(f"Raw EEG: {vhdr_path}")
@@ -237,7 +302,6 @@ def main() -> None:
     print("value = raw trigger code")
     print(events[["trial_type", "stimulus_id", "value", "sample"]])
 
-    gammatone = load_gammatone_predictors(predictor_dir)
     xs = []
     plot_rows = []
 
@@ -245,11 +309,11 @@ def main() -> None:
         stimulus_id = str(int(row["stimulus_id"]))
         value = row["value"]
         i_start = int(row["sample"])
-        predictor = crop_ndvar_samples(gammatone[stimulus_id], args.samples)
+        predictor = crop_ndvar_samples(gammatone[stimulus_id], samples)
 
         recorded = NDVar(
-            raw._data[audio_index, i_start : i_start + args.samples],
-            UTS(0, 0.002, args.samples),
+            raw._data[audio_index, i_start : i_start + samples],
+            UTS(0, 0.002, samples),
             name=f"recorded {audio_name} channel",
         )
         recorded -= recorded.min()
@@ -270,6 +334,11 @@ def main() -> None:
             f"value={value}, sample={i_start}"
         )
 
+    subject_output_dir = output_dir / subject
+    subject_output_dir.mkdir(parents=True, exist_ok=True)
+    events_table_path = subject_output_dir / f"{subject}_events_used_for_visual_qc.csv"
+    events[["trial_type", "stimulus_id", "value", "sample"]].to_csv(events_table_path, index=False)
+
     p = plot.UTS(
         xs,
         axh=2,
@@ -277,22 +346,70 @@ def main() -> None:
         title=f"{subject}: recorded AUD/Aux5 channel vs expected WAV-derived gammatone-1 predictor",
         axtitle=events["value"],
     )
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = args.output_dir / f"{subject}_stimulus_id_audio_alignment_eelbrain.png"
-    overlay_output_path = args.output_dir / f"{subject}_stimulus_id_audio_alignment_overlay.png"
+    output_path = subject_output_dir / f"{subject}_stimulus_id_audio_alignment_eelbrain.png"
+    overlay_output_path = subject_output_dir / f"{subject}_stimulus_id_audio_alignment_overlay.png"
     p.save(output_path, dpi=150, bbox_inches="tight")
     save_transparent_overlay(plot_rows, overlay_output_path)
 
     print("\nCreated Eelbrain UTS plot.")
+    print(f"Saved event table: {events_table_path}")
     print(f"Saved Eelbrain plot: {output_path}")
     print(f"Saved transparent overlay plot: {overlay_output_path}")
     print("Each row compares the recorded AUD/Aux5 channel against the expected WAV-derived gammatone-1 predictor.")
     print("If shapes align, the BIDS stimulus_id is supported for that row.")
     print("If a row looks shifted or wrong, inspect that event before trusting stimulus_id.")
 
-    if not args.show:
+    if not show:
         p.close()
         print("Plot closed after saving. Re-run with --show to also keep it open if your backend supports it.")
+
+    return {
+        "subject": subject,
+        "status": "ok",
+        "audio_channel": audio_name,
+        "n_events": len(events),
+        "event_table": str(events_table_path),
+        "eelbrain_plot": str(output_path),
+        "overlay_plot": str(overlay_output_path),
+    }
+
+
+def main() -> None:
+    args = parse_args()
+    bids_root = args.bids_root
+    predictor_dir = bids_root / "derivatives" / "predictors"
+    subjects = choose_subjects(args)
+
+    print("Subjects selected for visual QC:")
+    print(", ".join(subjects))
+
+    gammatone = load_gammatone_predictors(predictor_dir)
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    summary_rows = []
+    for subject in subjects:
+        try:
+            summary_rows.append(
+                inspect_subject(
+                    bids_root=bids_root,
+                    subject=subject,
+                    gammatone=gammatone,
+                    samples=args.samples,
+                    output_dir=args.output_dir,
+                    show=args.show,
+                )
+            )
+        except Exception as exc:
+            print(f"{subject} failed: {exc!r}")
+            subject_output_dir = args.output_dir / subject
+            subject_output_dir.mkdir(parents=True, exist_ok=True)
+            summary_rows.append({"subject": subject, "status": "failed", "error": repr(exc)})
+
+    summary = pd.DataFrame(summary_rows)
+    summary_path = args.output_dir / "visual_qc_subject_summary.csv"
+    summary.to_csv(summary_path, index=False)
+    print(f"\nSaved visual QC summary: {summary_path}")
+    print(summary)
 
 
 if __name__ == "__main__":
