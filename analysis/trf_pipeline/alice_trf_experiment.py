@@ -8,11 +8,13 @@ implementation.
 from __future__ import annotations
 
 import csv
+import math
 from pathlib import Path
 
 import re
 import wave
 
+import mne
 from eelbrain.pipeline import LabelVar, PrimaryEpoch, RawFilter, RawSource
 from trftools.pipeline import FilePredictor, TRFExperiment
 
@@ -110,11 +112,47 @@ EVENT_TO_SEGMENT = _event_to_segment_map()
 
 AUDIO_LIKE_EXACT = {"aud", "audio", "aux", "aux5", "ox"}
 AUDIO_LIKE_PATTERN = re.compile(r"(aud|audio|aux|stim|trigger|trig)", re.IGNORECASE)
+EOG_LIKE_EXACT = {"eog", "veog", "heog"}
+EOG_LIKE_PATTERN = re.compile(r"eog", re.IGNORECASE)
 
 
 def is_audio_like_channel(channel_name: str) -> bool:
     lower = channel_name.strip().lower()
     return lower in AUDIO_LIKE_EXACT or AUDIO_LIKE_PATTERN.search(lower) is not None
+
+
+def is_eog_like_channel(channel_name: str) -> bool:
+    lower = channel_name.strip().lower()
+    return lower in EOG_LIKE_EXACT or EOG_LIKE_PATTERN.search(lower) is not None
+
+
+def _has_valid_position(raw: mne.io.BaseRaw, channel_name: str) -> bool:
+    loc = raw.info["chs"][raw.ch_names.index(channel_name)]["loc"][:3]
+    return all(math.isfinite(float(value)) for value in loc)
+
+
+def _set_fallback_eeg_positions(raw: mne.io.BaseRaw) -> None:
+    """Set finite placeholder EEG positions when BIDS has no montage.
+
+    Eelbrain needs finite sensor locations to build an NDVar. These positions
+    are not used for spatial inference because adjacency is explicitly "none".
+    """
+
+    eeg_channels = [
+        ch for ch, kind in zip(raw.ch_names, raw.get_channel_types())
+        if kind == "eeg"
+    ]
+    if not eeg_channels or all(_has_valid_position(raw, ch) for ch in eeg_channels):
+        return
+
+    radius = 0.095
+    ch_pos = {}
+    for index, ch in enumerate(eeg_channels):
+        angle = 2 * math.pi * index / len(eeg_channels)
+        ch_pos[ch] = (radius * math.cos(angle), radius * math.sin(angle), 0.0)
+
+    montage = mne.channels.make_dig_montage(ch_pos=ch_pos, coord_frame="head")
+    raw.set_montage(montage, on_missing="ignore")
 
 
 class AudioAwareRawSource(RawSource):
@@ -125,6 +163,10 @@ class AudioAwareRawSource(RawSource):
         audio_like = [ch for ch in raw.ch_names if is_audio_like_channel(ch)]
         if audio_like:
             raw.set_channel_types({ch: "misc" for ch in audio_like}, on_unit_change="ignore")
+        eog_like = [ch for ch in raw.ch_names if is_eog_like_channel(ch)]
+        if eog_like:
+            raw.set_channel_types({ch: "eog" for ch in eog_like}, on_unit_change="ignore")
+        _set_fallback_eeg_positions(raw)
         return raw
 
 PARAMETERS = {
@@ -149,7 +191,7 @@ class AliceComprehensionTRF(TRFExperiment):
     sessions = ["alice"]
 
     raw = {
-        "raw": AudioAwareRawSource(adjacency="auto"),
+        "raw": AudioAwareRawSource(adjacency="none"),
         "0.5-20": RawFilter("raw", 0.5, 20, cache=False),
     }
 

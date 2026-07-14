@@ -64,6 +64,12 @@ python scripts/set_aud_channel_type_misc.py --apply
 This changes BIDS `channels.tsv` metadata only. It does not modify `.eeg`
 binary files.
 
+The BrainVision files do not provide electrode digitization points, and the EEG
+channels are numbered rather than named with a standard montage. The pipeline
+therefore assigns finite placeholder EEG positions and disables sensor
+adjacency. This is only to let Eelbrain create sensor-level NDVars; it is not
+used for spatial inference.
+
 ## Planned Flow
 
 1. Fix `AUD` channel type from `EEG` to `MISC`.
