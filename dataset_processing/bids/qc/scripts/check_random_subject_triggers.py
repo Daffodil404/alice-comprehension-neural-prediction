@@ -86,12 +86,6 @@ def parse_args() -> argparse.Namespace:
         help="Path to stimulus_id_audio_alignment_subjects.csv for --include-mismatch-subjects.",
     )
     parser.add_argument(
-        "--seed",
-        type=int,
-        default=13,
-        help="Random seed used when --subject is omitted.",
-    )
-    parser.add_argument(
         "--samples",
         type=int,
         default=1000,
@@ -127,7 +121,7 @@ def available_subjects(bids_root: Path) -> list[str]:
     )
 
 
-def choose_subject(bids_root: Path, requested_subject: str | None, seed: int) -> str:
+def choose_subject(bids_root: Path, requested_subject: str | None) -> str:
     subjects = available_subjects(bids_root)
     if requested_subject:
         subject = normalize_subject(requested_subject)
@@ -136,8 +130,7 @@ def choose_subject(bids_root: Path, requested_subject: str | None, seed: int) ->
                 f"{requested_subject!r} normalized to {subject!r}, but it is not in {bids_root}."
             )
         return subject
-    rng = random.Random(seed)
-    return rng.choice(subjects)
+    return random.choice(subjects)
 
 
 def read_mismatch_subjects(subject_qc_path: Path) -> list[str]:
@@ -157,10 +150,9 @@ def choose_subjects(args: argparse.Namespace) -> list[str]:
         selected.append(normalize_subject(args.subject))
     else:
         if args.random_count:
-            rng = random.Random(args.seed)
-            selected.extend(rng.sample(subjects, min(args.random_count, len(subjects))))
+            selected.extend(random.sample(subjects, min(args.random_count, len(subjects))))
         elif not args.include_subjects and not args.include_mismatch_subjects:
-            selected.append(choose_subject(args.bids_root, None, args.seed))
+            selected.append(choose_subject(args.bids_root, None))
 
     selected.extend(normalize_subject(subject) for subject in args.include_subjects)
 
