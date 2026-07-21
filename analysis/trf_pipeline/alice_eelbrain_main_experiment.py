@@ -1,35 +1,33 @@
-"""TRF-Tools experiment definition for Alice comprehension.
+"""Eelbrain-main experiment definition for Alice comprehension TRFs.
 
-This module defines the formal TRF-Tools pipeline used to estimate acoustic
-tracking features. It intentionally replaces the earlier custom ridge-regression
-implementation.
+This is the forward migration target for the acoustic-tracking pipeline. It
+uses Eelbrain's built-in TRF pipeline API instead of TRF-Tools.
 """
 
 from __future__ import annotations
 
 import csv
 import math
-from pathlib import Path
-
 import re
 import wave
+from collections.abc import Mapping
+from typing import Any
+from pathlib import Path
 
 import mne
-from eelbrain.pipeline import LabelVar, PrimaryEpoch, RawFilter, RawSource
-from trftools.pipeline import FilePredictor, TRFExperiment
+from eelbrain.pipeline import LabelVar, Pipeline, PrimaryEpoch, RawFilter, RawSource
+from eelbrain._experiment.trf import Boosting, NUTSPredictor, UTSPredictor
+from eelbrain._experiment.trf.model import Term
 
 
 BIDS_ROOT = Path("/Users/yanyuwoo/Data/bids")
 STIMULI_DIR = BIDS_ROOT / "stimuli"
+PREDICTOR_ROOT = Path("/Users/yanyuwoo/Data/derivatives/predictors")
 DURATION_TOLERANCE_SEC = 0.001
 
 
 def _load_segment_durations_from_wav(stimuli_dir: Path = STIMULI_DIR) -> dict[str, float]:
-    """Read segment durations from stimulus WAV files for QC comparison.
-
-    Segment keys match the predictor file convention:
-    ``1.wav`` -> ``1~gammatone-8.pickle``.
-    """
+    """Read segment durations from stimulus WAV files for QC comparison."""
 
     durations: dict[str, float] = {}
     for wav_path in sorted(stimuli_dir.glob("*.wav"), key=lambda path: int(path.stem)):
@@ -41,11 +39,7 @@ def _load_segment_durations_from_wav(stimuli_dir: Path = STIMULI_DIR) -> dict[st
 
 
 def _load_segment_durations_from_events(bids_root: Path = BIDS_ROOT) -> dict[str, float]:
-    """Read segment durations from BIDS events.tsv files.
-
-    The BIDS events table is the source of truth for epoch duration. Durations
-    are keyed by ``stimulus_id`` so they match predictor file stems.
-    """
+    """Read segment durations from BIDS events.tsv files."""
 
     durations_by_segment: dict[str, list[float]] = {}
     event_paths = sorted(bids_root.glob("sub-*/eeg/*_events.tsv"))
@@ -84,19 +78,11 @@ def _load_segment_durations_from_events(bids_root: Path = BIDS_ROOT) -> dict[str
 
 BIDS_SEGMENT_DURATION = _load_segment_durations_from_events()
 WAV_SEGMENT_DURATION = _load_segment_durations_from_wav()
-
-# Keep this public name for the TRF-Tools experiment and notebooks.
 SEGMENT_DURATION = BIDS_SEGMENT_DURATION
 
 
 def _event_to_segment_map() -> dict[str, str]:
-    """Map BrainVision marker labels to predictor stimulus keys.
-
-    TRF-Tools/Eelbrain reads BrainVision marker labels from the raw files. Those
-    labels can still contain the old marker strings even when BIDS events.tsv has
-    already been standardized. Predictor filenames use the simple keys
-    ``1~gammatone-8.pickle`` ... ``12~gammatone-8.pickle``.
-    """
+    """Map BrainVision marker labels to predictor stimulus keys."""
 
     mapping: dict[str, str] = {}
     for key in sorted(SEGMENT_DURATION, key=int):
@@ -109,6 +95,8 @@ def _event_to_segment_map() -> dict[str, str]:
 
 
 EVENT_TO_SEGMENT = _event_to_segment_map()
+
+FALLBACK_MONTAGE_CHANNELS = tuple(str(i) for i in range(1, 62) if i != 29) + ("VEOG",)
 
 AUDIO_LIKE_EXACT = {"aud", "audio", "aux", "aux5", "ox"}
 AUDIO_LIKE_PATTERN = re.compile(r"(aud|audio|aux|stim|trigger|trig)", re.IGNORECASE)
@@ -132,11 +120,7 @@ def _has_valid_position(raw: mne.io.BaseRaw, channel_name: str) -> bool:
 
 
 def _set_fallback_eeg_positions(raw: mne.io.BaseRaw) -> None:
-    """Set finite placeholder EEG positions when BIDS has no montage.
-
-    Eelbrain needs finite sensor locations to build an NDVar. These positions
-    are not used for spatial inference because adjacency is explicitly "none".
-    """
+    """Set finite placeholder EEG positions when BIDS has no montage."""
 
     eeg_channels = [
         ch for ch, kind in zip(raw.ch_names, raw.get_channel_types())
@@ -155,8 +139,23 @@ def _set_fallback_eeg_positions(raw: mne.io.BaseRaw) -> None:
     raw.set_montage(montage, on_missing="ignore")
 
 
+def _make_fallback_montage() -> mne.channels.DigMontage:
+    """Create placeholder positions for Alice's numbered EEG channels."""
+
+    radius = 0.095
+    ch_pos = {}
+    for index, ch in enumerate(FALLBACK_MONTAGE_CHANNELS):
+        angle = 2 * math.pi * index / len(FALLBACK_MONTAGE_CHANNELS)
+        ch_pos[ch] = (radius * math.cos(angle), radius * math.sin(angle), 0.0)
+    return mne.channels.make_dig_montage(ch_pos=ch_pos, coord_frame="head")
+
+
 class AudioAwareRawSource(RawSource):
     """RawSource that marks audio/auxiliary channels as non-EEG targets."""
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("montage", _make_fallback_montage())
+        super().__init__(**kwargs)
 
     def _load(self, path, preload):
         raw = super()._load(path, preload)
@@ -169,26 +168,38 @@ class AudioAwareRawSource(RawSource):
         _set_fallback_eeg_positions(raw)
         return raw
 
-PARAMETERS = {
-    "raw": "0.5-20",
+
+class AlicePredictorMixin:
+    """Load Alice predictors from the existing external predictor directory."""
+
+    def _path(self, term: Term, state: Mapping[str, Any], root: Path) -> Path:
+        return PREDICTOR_ROOT / f"{self._file_stem(term)}.pickle"
+
+
+class AliceUTSPredictor(AlicePredictorMixin, UTSPredictor):
+    pass
+
+
+class AliceNUTSPredictor(AlicePredictorMixin, NUTSPredictor):
+    pass
+
+
+TRF_OPTIONS = {
     "samplingrate": 50,
     "data": "eeg",
     "tstart": -0.100,
     "tstop": 1.000,
     "filter_x": "continuous",
-    "error": "l1",
-    "basis": 0.050,
-    "partitions": -5,
-    "selective_stopping": 1,
 }
 
 
-class AliceComprehensionTRF(TRFExperiment):
-    """TRF-Tools pipeline for the BIDS Alice comprehension dataset."""
+class AliceComprehensionEelbrainMain(Pipeline):
+    """Eelbrain-main pipeline for the BIDS Alice comprehension dataset."""
 
     data_dir = "."
     subject_re = r"sub-\d\d"
     sessions = ["alice"]
+    default_data = "eeg"
 
     raw = {
         "raw": AudioAwareRawSource(adjacency="none"),
@@ -196,7 +207,7 @@ class AliceComprehensionTRF(TRFExperiment):
     }
 
     variables = {
-        "segment": LabelVar("event", EVENT_TO_SEGMENT, default=""),
+        "segment": LabelVar("trial_type", EVENT_TO_SEGMENT, default=""),
         "duration": LabelVar(
             "segment",
             {segment: duration + 1 for segment, duration in SEGMENT_DURATION.items()},
@@ -213,12 +224,20 @@ class AliceComprehensionTRF(TRFExperiment):
         ),
     }
 
-    # Predictor files are named {segment}~gammatone-8.pickle in derivatives.
     stim_var = "segment"
 
     predictors = {
-        "gammatone": FilePredictor(resample="bin"),
-        "word": FilePredictor(columns=True),
+        "gammatone": AliceUTSPredictor(resample="bin"),
+        "word": AliceNUTSPredictor(),
+    }
+
+    estimators = {
+        "boosting": Boosting(
+            basis=0.050,
+            error="l1",
+            partitions=-5,
+            selective_stopping=1,
+        ),
     }
 
     models = {
@@ -227,4 +246,4 @@ class AliceComprehensionTRF(TRFExperiment):
     }
 
 
-alice = AliceComprehensionTRF(BIDS_ROOT)
+alice = AliceComprehensionEelbrainMain(BIDS_ROOT)

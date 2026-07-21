@@ -1,16 +1,53 @@
-"""Batch jobs for the Alice comprehension TRF-Tools pipeline.
+"""Eelbrain-main TRF job helpers for Alice comprehension.
 
-Run from this directory with:
-
-    trf-tools-make-jobs jobs.py
-
-Start with the single-predictor model before expanding to model comparisons.
+This file replaces the old TRF-Tools ``trf-tools-make-jobs`` entrypoint. It
+keeps job construction explicit and local to Eelbrain's built-in TRF API.
 """
 
-from alice_trf_experiment import PARAMETERS, alice
+from __future__ import annotations
+
+from alice_eelbrain_main_experiment import TRF_OPTIONS, alice
 
 
-JOBS = [
-    alice.trf_job("gammatone-8", **PARAMETERS),
-]
+MODEL = "gammatone-8"
+SUBJECTS = tuple(alice.get_field_values("subject"))
 
+
+def trf_path(subject: str):
+    """Return the cache path for a subject/model without fitting it."""
+
+    return alice.load_trf(
+        MODEL,
+        subject=subject,
+        raw="0.5-20",
+        epoch="chapter-1",
+        inv="",
+        path_only=True,
+        **TRF_OPTIONS,
+    )
+
+
+def make_trf_job(subject: str):
+    """Load the data-carrying Eelbrain TRF job for one subject."""
+
+    return alice.load_trf_job(
+        MODEL,
+        subject=subject,
+        raw="0.5-20",
+        epoch="chapter-1",
+        inv="",
+        **TRF_OPTIONS,
+    )
+
+
+def fit_subject(subject: str):
+    """Fit or load the gammatone-8 TRF for one subject."""
+
+    return alice.load_trf(
+        MODEL,
+        subject=subject,
+        raw="0.5-20",
+        epoch="chapter-1",
+        inv="",
+        **TRF_OPTIONS,
+    )

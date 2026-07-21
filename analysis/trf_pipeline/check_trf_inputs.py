@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check inputs for the Alice TRF-Tools pipeline.
+"""Check inputs for the Alice Eelbrain-main TRF pipeline.
 
 This script does not estimate TRFs. It verifies the metadata and predictor
 inputs required before running the first formal pipeline model.
@@ -10,16 +10,17 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from alice_trf_experiment import (
+from alice_eelbrain_main_experiment import (
     BIDS_ROOT,
     BIDS_SEGMENT_DURATION,
     EVENT_TO_SEGMENT,
+    PREDICTOR_ROOT,
     WAV_SEGMENT_DURATION,
     alice,
 )
 
 
-PREDICTOR_DIR = BIDS_ROOT / "derivatives" / "predictors"
+PREDICTOR_DIR = PREDICTOR_ROOT
 
 
 def check_aud_channel_types() -> tuple[int, list[str]]:
@@ -63,7 +64,7 @@ def check_durations() -> None:
 
 
 def check_events(subject: str = "01") -> None:
-    events = alice.load_events(subject)
+    events = alice.load_events(subject=subject, raw="0.5-20", epoch="chapter-1")
     print(f"Loaded events for subject {subject}: {events.n_cases} rows")
     print(events.head())
     print("segment values:", sorted(set(events["segment"])))
@@ -86,6 +87,7 @@ def main() -> None:
     subjects = alice.get_field_values("subject")
     print(f"Pipeline subjects: {len(subjects)} ({subjects[0]}..{subjects[-1]})")
     print(f"Event marker mappings: {len(EVENT_TO_SEGMENT)}")
+    print(f"Event trial_type mappings: {len(EVENT_TO_SEGMENT)}")
     check_durations()
 
     total_aud, bad_subjects = check_aud_channel_types()

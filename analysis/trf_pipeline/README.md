@@ -1,24 +1,32 @@
-# TRF-Tools Pipeline
+# Eelbrain-Main TRF Pipeline
 
-This directory contains the formal TRF-Tools pipeline scaffold for the Alice
+This directory contains the formal Eelbrain pipeline scaffold for the Alice
 comprehension acoustic-tracking analysis.
 
-The goal of this branch is to replace the custom hand-written ridge-regression
-feature extraction with the TRF-Tools BIDS pipeline.
+The pipeline uses Eelbrain's built-in TRF API from the latest main branch.
 
 ## Environment
 
-Use the local `trf` environment:
+Use the Eelbrain-main environment:
 
 ```bash
-mamba activate trf
+mamba env create -f environment-trf-eelbrain-main.yml
+mamba activate trf-eelbrain-main
 ```
 
-The current environment has:
+This environment intentionally does not install `trftools`. It uses Eelbrain's
+native TRF API:
 
-- `trftools`
 - `eelbrain`
 - `mne`
+
+## Experiment Definition
+
+Use this experiment definition:
+
+```text
+analysis/trf_pipeline/alice_eelbrain_main_experiment.py
+```
 
 ## First Model
 
@@ -28,11 +36,11 @@ The first formal pipeline model is:
 gammatone-8
 ```
 
-This model name is registered in `AliceComprehensionTRF.models` and uses
+This model name is registered in `AliceComprehensionEelbrainMain.models` and uses
 existing predictor files under:
 
 ```text
-/Users/yanyuwoo/Data/bids/derivatives/predictors/
+/Users/yanyuwoo/Data/derivatives/predictors/
 ```
 
 with names like:
@@ -74,6 +82,7 @@ used for spatial inference.
 
 1. Fix `AUD` channel type from `EEG` to `MISC`.
 2. Check TRF pipeline inputs.
-3. Run the first `gammatone-8` TRF model.
-4. Extract subject-level tracking scores.
-5. Merge tracking scores with comprehension scores.
+3. Validate the Eelbrain-main experiment definition.
+4. Run the first `gammatone-8` TRF model with Eelbrain main.
+5. Extract subject-level tracking scores.
+6. Merge tracking scores with comprehension scores.

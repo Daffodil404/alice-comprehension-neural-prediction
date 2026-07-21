@@ -1,3 +1,7 @@
+# Eelbrain-main environment for the Alice comprehension project.
+#
+# This environment intentionally does not install TRF-Tools. The current
+# migration target is Eelbrain's built-in TRF pipeline API from main.
 name: trf-eelbrain-main
 channels:
   - conda-forge
