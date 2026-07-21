@@ -242,7 +242,16 @@ class AliceComprehensionEelbrainMain(Pipeline):
 
     models = {
         "gammatone-8": "gammatone-8",
+        "acoustic-onset-8": "gammatone-on-8",
         "auditory-gammatone": "gammatone-8 + gammatone-on-8",
+        "word-onset": "word",
+        "word-logfreq": "word-LogFreq",
+        "word-ngram": "word-NGRAM",
+        "word-rnn": "word-RNN",
+        "word-cfg": "word-CFG",
+        "lexical-onset": "word-lexical",
+        "nonlexical-onset": "word-nlexical",
+        "gammatone-plus-word": "gammatone-8 + word",
     }
 
 
