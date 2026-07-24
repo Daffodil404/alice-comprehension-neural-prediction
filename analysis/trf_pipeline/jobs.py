@@ -20,7 +20,7 @@ def trf_path(subject: str):
         MODEL,
         subject=subject,
         raw="0.5-20",
-        epoch="chapter-1",
+        epoch="story-segments",
         inv="",
         path_only=True,
         **TRF_OPTIONS,
@@ -34,7 +34,7 @@ def make_trf_job(subject: str):
         MODEL,
         subject=subject,
         raw="0.5-20",
-        epoch="chapter-1",
+        epoch="story-segments",
         inv="",
         **TRF_OPTIONS,
     )
@@ -47,7 +47,7 @@ def fit_subject(subject: str):
         MODEL,
         subject=subject,
         raw="0.5-20",
-        epoch="chapter-1",
+        epoch="story-segments",
         inv="",
         **TRF_OPTIONS,
     )

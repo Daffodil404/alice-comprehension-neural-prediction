@@ -215,7 +215,7 @@ class AliceComprehensionEelbrainMain(Pipeline):
     }
 
     epochs = {
-        "chapter-1": PrimaryEpoch(
+        "story-segments": PrimaryEpoch(
             "alice",
             tmin=0,
             tmax="duration",
