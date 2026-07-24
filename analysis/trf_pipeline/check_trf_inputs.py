@@ -64,7 +64,7 @@ def check_durations() -> None:
 
 
 def check_events(subject: str = "01") -> None:
-    events = alice.load_events(subject=subject, raw="0.5-20", epoch="chapter-1")
+    events = alice.load_events(subject=subject, raw="0.5-20", epoch="story-segments")
     print(f"Loaded events for subject {subject}: {events.n_cases} rows")
     print(events.head())
     print("segment values:", sorted(set(events["segment"])))
