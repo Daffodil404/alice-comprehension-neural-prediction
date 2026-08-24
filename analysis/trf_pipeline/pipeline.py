@@ -11,6 +11,7 @@ from eelbrain.pipeline import (
     PrimaryEpoch,
     RawFilter,
     RawSource,
+    Reference,
     UTSPredictor,
 )
 
@@ -29,6 +30,10 @@ class AliceComprehension(Pipeline):
             adjacency="none",
         ),
         "0.5-20": RawFilter("raw", 0.5, 20, cache=False),
+    }
+
+    references = {
+        "mastoids": Reference(["25", "29"], add="29"),
     }
 
     variables = {
