@@ -16,7 +16,8 @@ import pandas as pd
 EXPERIMENTS_DIR = Path(__file__).resolve().parent
 TRF_PIPELINE_DIR = EXPERIMENTS_DIR.parent
 REPO_ROOT = TRF_PIPELINE_DIR.parents[1]
-RESULTS_ROOT = TRF_PIPELINE_DIR / "results" / "by_predictor"
+RESULTS_ROOT = TRF_PIPELINE_DIR / "results"
+RESULT_GROUPS = {"by_predictor", "by_multi_predictor"}
 SCORES_PATH = REPO_ROOT / "data" / "derived" / "comprehension_scores_clean.csv"
 
 # These settings define the controlled part of every predictor experiment.
@@ -50,11 +51,18 @@ def _subject_number(subject: object) -> str:
     return f"{int(value):02d}"
 
 
-def _array_shape(value: object) -> str:
-    """Represent an Eelbrain NDVar/array shape without serializing its data."""
+def _term_arrays(value: object) -> list[np.ndarray]:
+    """Convert one TRF kernel or a tuple of term kernels to arrays."""
 
-    array = getattr(value, "x", value)
-    return str(np.asarray(array).shape)
+    terms = value if isinstance(value, (tuple, list)) else (value,)
+    return [np.asarray(getattr(term, "x", term), dtype=float) for term in terms]
+
+
+def _array_shape(value: object) -> str:
+    """Represent one or more Eelbrain kernel shapes without serializing data."""
+
+    shapes = [array.shape for array in _term_arrays(value)]
+    return str(shapes[0]) if len(shapes) == 1 else str(shapes)
 
 
 def _sensor_names(r: object) -> list[str]:
@@ -84,9 +92,9 @@ def _summarize_result(result: object) -> dict[str, object]:
 
     best_index = int(np.nanargmax(r_values))
     minimum_index = int(np.nanargmin(r_values))
-    h_values = np.asarray(result.h.x, dtype=float)
+    h_values = _term_arrays(result.h)
     finite_r = bool(np.isfinite(r_values).all())
-    finite_h = bool(np.isfinite(h_values).all())
+    finite_h = all(bool(np.isfinite(values).all()) for values in h_values)
 
     summary = {
         "tracking_r_mean": float(np.mean(r_values)),
@@ -100,6 +108,7 @@ def _summarize_result(result: object) -> dict[str, object]:
         "minimum_channel": sensors[minimum_index],
         "n_result_channels": len(r_values),
         "contains_veog": "VEOG" in sensors,
+        "n_model_terms": len(h_values),
         "h_shape": _array_shape(result.h),
         "finite_r": finite_r,
         "finite_h": finite_h,
@@ -227,12 +236,18 @@ def run_experiment(
     experiment_id: str,
     predictor: str,
     subjects: list[str] | None = None,
+    result_group: str = "by_predictor",
 ) -> Path:
-    """Fit/load one predictor for every requested subject and save one row each."""
+    """Fit/load one model for every requested subject and save one row each."""
 
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", experiment_id):
         raise ValueError(
             "experiment_id must contain only lowercase letters, digits, '_' or '-'"
+        )
+    if result_group not in RESULT_GROUPS:
+        raise ValueError(
+            f"result_group must be one of {sorted(RESULT_GROUPS)}; "
+            f"got {result_group!r}"
         )
 
     # Keep plotting/font caches out of the repository and writable in restricted
@@ -257,7 +272,7 @@ def run_experiment(
     else:
         selected_subjects = available_subjects
 
-    output_dir = RESULTS_ROOT / experiment_id
+    output_dir = RESULTS_ROOT / result_group / experiment_id
     if subjects:
         label = "-".join(selected_subjects)
         output_path = output_dir / f"subject_results_subset-{label}.csv"
